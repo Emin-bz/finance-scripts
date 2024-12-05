@@ -2,7 +2,7 @@ from datetime import datetime
 import fetchers
 
 class Trader:
-    def __init__(self, cash, fee_percent=0.1, stop_loss_percent=5.0, max_holding_days=30, reseed=1000, profit_perc_threshold=1):
+    def __init__(self, cash, fee_percent=0.001, stop_loss_percent=5.0, max_holding_days=30, reseed=1000, profit_perc_threshold=1):
         self.cash = cash
         self.fee_percent = fee_percent  # Platform fee in percentage
         self.holdings = 0  # Number of units (crypto coins)
@@ -17,7 +17,7 @@ class Trader:
     def buy(self, price, date):
         # Calculate how many units (crypto coins) can be bought with available cash
         units = self.cash / price
-        fee = self.cash * self.fee_percent / 100
+        fee = self.cash * self.fee_percent
         self.holdings = units
         self.last_purchase_price = price
         self.purchase_date = date
@@ -27,9 +27,9 @@ class Trader:
     def sell(self, price, date):
         # Sell all holdings
         revenue = price * self.holdings
-        fee = revenue * self.fee_percent / 100
+        fee = revenue * self.fee_percent
         self.cash += (revenue - fee)
-        print(f"Sold {self.holdings:.6f} units at {price:.2f} per unit on {date.strftime('%Y-%m-%d %H:%M:%S')}. Total cash: {self.cash:.2f}")
+        print(f"Sold {self.holdings:.6f} units at {price:.2f} per unit on {date.strftime('%Y-%m-%d %H:%M:%S')}. Total cash: {self.cash:.2f}\n")
         self.holdings = 0
         self.last_purchase_price = 0
         self.purchase_date = None
@@ -50,15 +50,26 @@ class Trader:
 
         return False
     
-    def seed(self, date):
-        if date.day % 28 == 0:
+    def seed(self, date, seeding_table):
+        truncated_date = datetime(date.year, date.month, date.day)
+        if date.day % 28 == 0 and truncated_date not in seeding_table:
             self.cash += self.reseed
             self.reseed_count += 1
-
+            seeding_table[truncated_date] = 1
+    
     def trade(self, data):
-        for date, price in sorted(data.items()):
-            # Check if we should buy
-            self.seed(date)
+        chart_data = list(data.items())
+
+        seeding_table = {}
+        
+        #TODO: Build in a mechanism which checks there were e.g. 5 consecutive stop losses and if so, stop trading for 2 months or something like that.
+
+        for i in range(30, len(chart_data)):
+            date = chart_data[i][0]
+            price = chart_data[i][1]
+            chart_range_data = chart_data[i-30:i]
+            
+            self.seed(date, seeding_table)
 
             if self.holdings == 0:
                 self.buy(price, date)
@@ -75,6 +86,7 @@ class Trader:
 
         self.sell(data[sorted(data.keys())[-1]], sorted(data.keys())[-1])
 
+
 if __name__ == "__main__":
 
     class KEYS:
@@ -83,14 +95,14 @@ if __name__ == "__main__":
         PROFIT_THRESHOLD = 'profit_perc_threshold'
         FETCHER_FUNC = 'fetcherFunc'
         SYMBOL = 'symbol'
-        TYPE: 'type'
+        TYPE = 'type'
 
     modes = {
         KEYS.CRYPTO: {
             KEYS.FETCHER_FUNC: fetchers.fetch_crypto_data,
             KEYS.PROFIT_THRESHOLD: 1
         },
-        KEYS.CRYPTO: {
+        KEYS.STOCK: {
             KEYS.FETCHER_FUNC: fetchers.fetch_stock_data_yahoo,
             KEYS.PROFIT_THRESHOLD: 2
         }
@@ -102,6 +114,7 @@ if __name__ == "__main__":
         'ethereum': {KEYS.SYMBOL: "ETHUSDT", KEYS.TYPE: KEYS.CRYPTO},
         'xrp': {KEYS.SYMBOL: "XRPUSDT", KEYS.TYPE: KEYS.CRYPTO},
         'cardano': {KEYS.SYMBOL: "ADAUSDT", KEYS.TYPE: KEYS.CRYPTO},
+        'shiba': {KEYS.SYMBOL: "SHIBUSDT", KEYS.TYPE: KEYS.CRYPTO},
         'sp500': {KEYS.SYMBOL: "^GSPC", KEYS.TYPE: KEYS.STOCK},
         'nvda': {KEYS.SYMBOL: "NVDA", KEYS.TYPE: KEYS.STOCK}
     }
@@ -113,14 +126,14 @@ if __name__ == "__main__":
     
     symbol = assets[asset_choice]['symbol'].lower()
     initial_cash = 1000
-    start_date = "2023-01-01"
+    start_date = "2020-01-01"
     end_date = "2024-12-31"
     
     mode = assets[asset_choice]['type']
 
     # Initialize the trader for the chosen cryptocurrency
-    trader = Trader(initial_cash, stop_loss_percent=10.0, max_holding_days=30, reseed=1000, profit_perc_threshold=modes[mode]['profit_perc_threshold'])
-
+    trader = Trader(initial_cash, stop_loss_percent=75.0, max_holding_days=30, reseed=300, profit_perc_threshold=modes[mode]['profit_perc_threshold'])
+    
     # Fetch daily data for the given period from CoinGecko
     data = modes[mode]['fetcherFunc'](symbol=symbol, start_date=start_date, end_date=end_date)
 
